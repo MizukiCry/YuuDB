@@ -1,0 +1,30 @@
+index = 0, offset = 0
+key_length = 0 [0, 0, 0, 0]
+value_length = 0 [0, 0, 0, 0]
+key = "" []
+value = "" []
+
+index = 1, offset = 8
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "a" [61]
+value = [1]
+
+index = 2, offset = 18
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "b" [62]
+value = [2]
+
+index = 3, offset = 28
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "c" [63]
+value = [3]
+
+index = 4, offset = 38
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "d" [64]
+value = [4]
+

@@ -1,0 +1,72 @@
+index = 0, offset = 0
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "b" [62]
+value = [1]
+
+index = 1, offset = 10
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "b" [62]
+value = [2]
+
+index = 2, offset = 20
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "e" [65]
+value = [5]
+
+index = 3, offset = 30
+key_length = 1 [0, 0, 0, 1]
+value_length = -1 [ff, ff, ff, ff]
+key = "e" [65]
+value = tombstone []
+
+index = 4, offset = 39
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "c" [63]
+value = [0]
+
+index = 5, offset = 49
+key_length = 1 [0, 0, 0, 1]
+value_length = -1 [ff, ff, ff, ff]
+key = "c" [63]
+value = tombstone []
+
+index = 6, offset = 58
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "c" [63]
+value = [3]
+
+index = 7, offset = 68
+key_length = 0 [0, 0, 0, 0]
+value_length = 0 [0, 0, 0, 0]
+key = "" []
+value = "" []
+
+index = 8, offset = 76
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "a" [61]
+value = [1]
+
+index = 9, offset = 86
+key_length = 1 [0, 0, 0, 1]
+value_length = -1 [ff, ff, ff, ff]
+key = "f" [66]
+value = tombstone []
+
+index = 10, offset = 95
+key_length = 1 [0, 0, 0, 1]
+value_length = -1 [ff, ff, ff, ff]
+key = "d" [64]
+value = tombstone []
+
+index = 11, offset = 104
+key_length = 1 [0, 0, 0, 1]
+value_length = 1 [0, 0, 0, 1]
+key = "d" [64]
+value = [4]
+

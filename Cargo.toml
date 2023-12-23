@@ -1,0 +1,16 @@
+[package]
+name = "yuudb"
+description = "A simple database for learning purposes"
+version = "0.1.0"
+authors = ["MizukiCry <YuukaC@outlook.com>"]
+edition = "2021"
+
+
+[dependencies]
+serde = { version = "1.0.193", features = ["derive"] }
+fs4 = "0.7.0"
+log = "0.4.20"
+
+[dev-dependencies]
+tempdir = "0.3.7"
+tempfile = "3.8.1"
