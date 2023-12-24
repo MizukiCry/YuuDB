@@ -292,11 +292,8 @@ impl Drop for BitCask {
     }
 }
 
-// Original tests from toyDB
 #[cfg(test)]
 mod tests {
-    use crate::test_engine;
-
     use super::*;
 
     impl Log {
@@ -317,7 +314,11 @@ mod tests {
                 reader.read_exact(&mut length_buffer)?;
                 let value_length_raw = i32::from_be_bytes(length_buffer);
                 let value_length = value_length_raw.max(0) as u32;
-                writeln!(writer, "value_length = {value_length} {:x?}", length_buffer)?;
+                writeln!(
+                    writer,
+                    "value_length = {value_length_raw} {:x?}",
+                    length_buffer
+                )?;
 
                 let mut key = vec![0u8; key_length as usize];
                 reader.read_exact(&mut key)?;
@@ -348,7 +349,258 @@ mod tests {
 
     const GOLDEN_DIR: &str = "tests/golden/bitcask";
 
-    test_engine!(BitCast::new(
-        tempdir::TempDir::new("yuudb")?.path().join("yuudb")
-    )?);
+    /// Creates a new BitCask engine for testing.
+    fn setup() -> Result<BitCask> {
+        BitCask::new(tempdir::TempDir::new("yuudb")?.path().join("yuudb"))
+    }
+
+    /// Writes various values primarily for testing log file handling.
+    ///
+    /// - '': empty key and value
+    /// - a: write
+    /// - b: write, write
+    /// - c: write, delete, write
+    /// - d: delete, write
+    /// - e: write, delete
+    /// - f: delete
+    fn setup_log(s: &mut BitCask) -> Result<()> {
+        s.set(b"b", vec![0x01])?;
+        s.set(b"b", vec![0x02])?;
+
+        s.set(b"e", vec![0x05])?;
+        s.delete(b"e")?;
+
+        s.set(b"c", vec![0x00])?;
+        s.delete(b"c")?;
+        s.set(b"c", vec![0x03])?;
+
+        s.set(b"", vec![])?;
+
+        s.set(b"a", vec![0x01])?;
+
+        s.delete(b"f")?;
+
+        s.delete(b"d")?;
+        s.set(b"d", vec![0x04])?;
+
+        // Make sure the scan yields the expected results.
+        assert_eq!(
+            vec![
+                (b"".to_vec(), vec![]),
+                (b"a".to_vec(), vec![0x01]),
+                (b"b".to_vec(), vec![0x02]),
+                (b"c".to_vec(), vec![0x03]),
+                (b"d".to_vec(), vec![0x04]),
+            ],
+            s.scan(..).collect::<Result<Vec<_>>>()?,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    /// Tests that logs are written correctly using a golden file.
+    fn log() -> Result<()> {
+        let mut s = setup()?;
+        setup_log(&mut s)?;
+
+        let mut mint = goldenfile::Mint::new(GOLDEN_DIR);
+        s.log.print(&mut mint.new_goldenfile("log")?)?;
+        Ok(())
+    }
+
+    #[test]
+    /// Tests that writing and then reading a file yields the same results.
+    fn reopen() -> Result<()> {
+        // NB: Don't use setup(), because the tempdir will be removed when
+        // the path falls out of scope.
+        let path = tempdir::TempDir::new("yuudb")?.path().join("yuudb");
+        let mut s = BitCask::new(path.clone())?;
+        setup_log(&mut s)?;
+
+        let expect = s.scan(..).collect::<Result<Vec<_>>>()?;
+        drop(s);
+        let mut s = BitCask::new(path)?;
+        assert_eq!(expect, s.scan(..).collect::<Result<Vec<_>>>()?,);
+
+        Ok(())
+    }
+
+    #[test]
+    /// Tests log compaction, by writing golden files of the before/after state,
+    /// and checking that the database contains the same results, even after
+    /// reopening the file.
+    fn compact() -> Result<()> {
+        // NB: Don't use setup(), because the tempdir will be removed when
+        // the path falls out of scope.
+        let path = tempdir::TempDir::new("yuudb")?.path().join("yuudb");
+        let mut s = BitCask::new(path.clone())?;
+        setup_log(&mut s)?;
+
+        // Dump the initial log file.
+        let mut mint = goldenfile::Mint::new(GOLDEN_DIR);
+        s.log.print(&mut mint.new_goldenfile("compact-before")?)?;
+        let expect = s.scan(..).collect::<Result<Vec<_>>>()?;
+
+        // Compact the log file and assert the new log file contents.
+        s.compact()?;
+        assert_eq!(path, s.log.path);
+        assert_eq!(expect, s.scan(..).collect::<Result<Vec<_>>>()?,);
+        s.log.print(&mut mint.new_goldenfile("compact-after")?)?;
+
+        // Reopen the log file and assert that the contents are the same.
+        drop(s);
+        let mut s = BitCask::new(path)?;
+        assert_eq!(expect, s.scan(..).collect::<Result<Vec<_>>>()?,);
+
+        Ok(())
+    }
+
+    #[test]
+    /// Tests that new_compact() will automatically compact the file when appropriate.
+    fn new_compact() -> Result<()> {
+        // Create an initial log file with a few entries.
+        let dir = tempdir::TempDir::new("yuudb")?;
+        let path = dir.path().join("orig");
+        let compactpath = dir.path().join("compact");
+
+        let mut s = BitCask::new_compact(path.clone(), 0.2)?;
+        setup_log(&mut s)?;
+        let status = s.status()?;
+        let garbage_ratio = status.garbage_disk_size as f64 / status.total_disk_size as f64;
+        drop(s);
+
+        // Test a few threshold value and assert whether it should trigger compaction.
+        let cases = vec![
+            (-1.0, true),
+            (0.0, true),
+            (garbage_ratio - 0.001, true),
+            (garbage_ratio, true),
+            (garbage_ratio + 0.001, false),
+            (1.0, false),
+            (2.0, false),
+        ];
+        for (threshold, expect_compact) in cases.into_iter() {
+            std::fs::copy(&path, &compactpath)?;
+            let mut s = BitCask::new_compact(compactpath.clone(), threshold)?;
+            let new_status = s.status()?;
+            assert_eq!(new_status.live_disk_size, status.live_disk_size);
+            if expect_compact {
+                assert_eq!(new_status.total_disk_size, status.live_disk_size);
+                assert_eq!(new_status.garbage_disk_size, 0);
+            } else {
+                assert_eq!(new_status, status);
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    /// Tests that exclusive locks are taken out on log files, released when the
+    /// database is closed, and that an error is returned if a lock is already
+    /// held.
+    fn log_lock() -> Result<()> {
+        let path = tempdir::TempDir::new("yuudb")?.path().join("yuudb");
+        let s = BitCask::new(path.clone())?;
+
+        assert!(BitCask::new(path.clone()).is_err());
+        drop(s);
+        assert!(BitCask::new(path.clone()).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    /// Tests that an incomplete write at the end of the log file can be
+    /// recovered by discarding the last entry.
+    fn recovery() -> Result<()> {
+        // Create an initial log file with a few entries.
+        let dir = tempdir::TempDir::new("yuudb")?;
+        let path = dir.path().join("complete");
+        let truncpath = dir.path().join("truncated");
+
+        let mut log = Log::new(path.clone())?;
+        let mut ends = vec![];
+
+        let (pos, len) = log.append_entry("deleted".as_bytes(), Some(&[1, 2, 3]))?;
+        ends.push(pos + len as u64);
+
+        let (pos, len) = log.append_entry("deleted".as_bytes(), None)?;
+        ends.push(pos + len as u64);
+
+        let (pos, len) = log.append_entry(&[], Some(&[]))?;
+        ends.push(pos + len as u64);
+
+        let (pos, len) = log.append_entry("key".as_bytes(), Some(&[1, 2, 3, 4, 5]))?;
+        ends.push(pos + len as u64);
+
+        drop(log);
+
+        // Copy the file, and truncate it at each byte, then try to open it
+        // and assert that we always retain a prefix of entries.
+        let size = std::fs::metadata(&path)?.len();
+        for pos in 0..=size {
+            std::fs::copy(&path, &truncpath)?;
+            let f = std::fs::OpenOptions::new().write(true).open(&truncpath)?;
+            f.set_len(pos)?;
+            drop(f);
+
+            let mut expect = vec![];
+            if pos >= ends[0] {
+                expect.push((b"deleted".to_vec(), vec![1, 2, 3]))
+            }
+            if pos >= ends[1] {
+                expect.pop(); // "deleted" key removed
+            }
+            if pos >= ends[2] {
+                expect.push((b"".to_vec(), vec![]))
+            }
+            if pos >= ends[3] {
+                expect.push((b"key".to_vec(), vec![1, 2, 3, 4, 5]))
+            }
+
+            let mut s = BitCask::new(truncpath.clone())?;
+            assert_eq!(expect, s.scan(..).collect::<Result<Vec<_>>>()?);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    /// Tests status(), both for a log file with known garbage, and
+    /// after compacting it when the live size must equal the file size.
+    fn status_full() -> Result<()> {
+        let mut s = setup()?;
+        setup_log(&mut s)?;
+
+        // Before compaction.
+        assert_eq!(
+            s.status()?,
+            Status {
+                name: "bitcask".to_string(),
+                key_count: 5,
+                size: 8,
+                total_disk_size: 114,
+                live_disk_size: 48,
+                garbage_disk_size: 66
+            }
+        );
+
+        // After compaction.
+        s.compact()?;
+        assert_eq!(
+            s.status()?,
+            Status {
+                name: "bitcask".to_string(),
+                key_count: 5,
+                size: 8,
+                total_disk_size: 48,
+                live_disk_size: 48,
+                garbage_disk_size: 0,
+            }
+        );
+
+        Ok(())
+    }
 }

@@ -83,8 +83,3 @@ impl super::engine::Engine for Memory {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    crate::test_engine!(super::Memory::new());
-}

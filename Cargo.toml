@@ -10,7 +10,9 @@ edition = "2021"
 serde = { version = "1.0.193", features = ["derive"] }
 fs4 = "0.7.0"
 log = "0.4.20"
+rand = "0.8.5"
 
 [dev-dependencies]
 tempdir = "0.3.7"
 tempfile = "3.8.1"
+goldenfile = "1.6.0"
